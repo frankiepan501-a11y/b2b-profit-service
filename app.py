@@ -122,7 +122,8 @@ def do_recompute():
         rate = fx(cur, ym) if cur and cur != "RMB" else 1.0
         if cur and cur != "RMB" and not rate: skip_fx += 1
         wl = num(gv(f, "物流成本RMB(待接)"))
-        ml = round(amt * rate - cg_rmb - wl, 2)
+        custom = num(gv(f, "报关费RMB"))  # 报关费(大客户出口) 计入我方成本
+        ml = round(amt * rate - cg_rmb - wl - custom, 2)
         cur_amt = num(gv(f, "产品金额(原币)")); cur_cg = num(gv(f, "采购成本RMB(领星自动)")); cur_ml = num(gv(f, "综合毛利RMB(自动)"))
         nf = {}
         if abs(cur_amt - amt) > 0.01 and amt: nf["产品金额(原币)"] = amt
