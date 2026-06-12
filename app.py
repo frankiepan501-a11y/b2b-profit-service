@@ -108,13 +108,12 @@ def do_recompute():
         fxc[k] = rate; time.sleep(0.15); return rate
 
     rows = getall(T)
-    # 回款汇总: 按 订单号/PI号 累加(原币); 记币种检测混付
-    pay_by_pi = {}; pay_cur = {}
+    # 回款明细: 按 订单号/PI号 收 [(金额,币种)] (尾款时按汇率换算到订单币种)
+    pay_by_pi = {}
     for pr in getall(T, PAY):
         pf = pr["fields"]; pi = gv(pf, "订单号/PI号"); amt = num(gv(pf, "回款金额(原币)")); cc = gv(pf, "币种")
         if not pi: continue
-        pay_by_pi[pi] = pay_by_pi.get(pi, 0) + amt
-        pay_cur.setdefault(pi, set()).add(cc)
+        pay_by_pi.setdefault(pi, []).append((amt, cc))
     updates = []; miss = set(); skip_fx = 0
     for r in rows:
         f = r["fields"]
@@ -140,9 +139,13 @@ def do_recompute():
         # 尾款/应收: 仅在阿华填了「订单总额(原币)」的行(订单头)算
         total = num(gv(f, "订单总额(原币)")); pi = gv(f, "订单号/PI号")
         if total > 0 and pi:
-            paid = round(pay_by_pi.get(pi, 0), 2); wk = round(total - paid, 2)
+            # 回款按月度汇率换算到订单币种再汇总(回款币种可能≠订单币种,如USD单收RMB)
+            paid = 0.0
+            for amt2, cc2 in pay_by_pi.get(pi, []):
+                r_from = fx(cc2, ym) if (cc2 and cc2 != "RMB") else 1.0
+                paid += amt2 * (r_from / rate if rate else 1.0)
+            paid = round(paid, 2); wk = round(total - paid, 2)
             status = "已结清" if wk <= 0.01 else ("部分回款" if paid > 0 else "未回款")
-            if len(pay_cur.get(pi, set())) > 1: status = "部分回款"  # 混币付,标部分,尾款近似
             if abs(num(gv(f, "已回款(原币)")) - paid) > 0.01: nf["已回款(原币)"] = paid
             if abs(num(gv(f, "尾款(原币)")) - wk) > 0.01: nf["尾款(原币)"] = wk
             if gv(f, "欠款状态") != status: nf["欠款状态"] = status
