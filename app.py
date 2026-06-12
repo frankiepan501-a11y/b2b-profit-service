@@ -18,7 +18,7 @@ LX_SECRET = os.environ.get("LX_SECRET", "IMJm0f/dwDM7YYR+2FrlEQ==")
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN", "")
 FEISHU = "https://open.feishu.cn/open-apis"
 LXHOST = "https://openapi.lingxing.com"
-APP = "E1kkbx1tVaJvQGsKf94cJG88nzb"; OT = "tblRbqG4VcTE6qCX"
+APP = "E1kkbx1tVaJvQGsKf94cJG88nzb"; OT = "tblRbqG4VcTE6qCX"; PAY = "tblGT5vyYTzrZZOc"
 FRANKIE = "ou_629ce01f4bc31de078e10fcb038dbf78"
 SKU_FIX = {}  # B2B SKU 基本=领星; 如有不一致在此补
 app = FastAPI()
@@ -48,10 +48,10 @@ def gv(f, k):
     return v
 
 
-def getall(T):
+def getall(T, tbl=OT):
     items = []; pt = None
     while True:
-        u = f"{FEISHU}/bitable/v1/apps/{APP}/tables/{OT}/records?page_size=500" + (f"&page_token={pt}" if pt else "")
+        u = f"{FEISHU}/bitable/v1/apps/{APP}/tables/{tbl}/records?page_size=500" + (f"&page_token={pt}" if pt else "")
         d = requests.get(u, headers={"Authorization": f"Bearer {T}"}, timeout=30).json().get("data", {})
         items += d.get("items") or []; pt = d.get("page_token")
         if not d.get("has_more"): break
@@ -108,6 +108,13 @@ def do_recompute():
         fxc[k] = rate; time.sleep(0.15); return rate
 
     rows = getall(T)
+    # 回款汇总: 按 订单号/PI号 累加(原币); 记币种检测混付
+    pay_by_pi = {}; pay_cur = {}
+    for pr in getall(T, PAY):
+        pf = pr["fields"]; pi = gv(pf, "订单号/PI号"); amt = num(gv(pf, "回款金额(原币)")); cc = gv(pf, "币种")
+        if not pi: continue
+        pay_by_pi[pi] = pay_by_pi.get(pi, 0) + amt
+        pay_cur.setdefault(pi, set()).add(cc)
     updates = []; miss = set(); skip_fx = 0
     for r in rows:
         f = r["fields"]
@@ -130,6 +137,15 @@ def do_recompute():
         # 产品金额(原币) 改飞书公式(数量×单价)实时算, 服务不再写
         if abs(cur_cg - cg_rmb) > 0.01: nf["采购成本RMB(领星自动)"] = cg_rmb
         if abs(cur_ml - ml) > 0.01: nf["综合毛利RMB(自动)"] = ml
+        # 尾款/应收: 仅在阿华填了「订单总额(原币)」的行(订单头)算
+        total = num(gv(f, "订单总额(原币)")); pi = gv(f, "订单号/PI号")
+        if total > 0 and pi:
+            paid = round(pay_by_pi.get(pi, 0), 2); wk = round(total - paid, 2)
+            status = "已结清" if wk <= 0.01 else ("部分回款" if paid > 0 else "未回款")
+            if len(pay_cur.get(pi, set())) > 1: status = "部分回款"  # 混币付,标部分,尾款近似
+            if abs(num(gv(f, "已回款(原币)")) - paid) > 0.01: nf["已回款(原币)"] = paid
+            if abs(num(gv(f, "尾款(原币)")) - wk) > 0.01: nf["尾款(原币)"] = wk
+            if gv(f, "欠款状态") != status: nf["欠款状态"] = status
         if nf: updates.append({"record_id": r["record_id"], "fields": nf})
     nw = 0
     for i in range(0, len(updates), 100):
