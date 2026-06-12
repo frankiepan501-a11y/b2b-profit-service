@@ -121,12 +121,13 @@ def do_recompute():
         cg_rmb = round((cgv or 0) * qty, 2)
         rate = fx(cur, ym) if cur and cur != "RMB" else 1.0
         if cur and cur != "RMB" and not rate: skip_fx += 1
-        wl = num(gv(f, "物流成本RMB(待接)"))
-        custom = num(gv(f, "报关费RMB"))  # 报关费(大客户出口) 计入我方成本
-        ml = round(amt * rate - cg_rmb - wl - custom, 2)
-        cur_amt = num(gv(f, "产品金额(原币)")); cur_cg = num(gv(f, "采购成本RMB(领星自动)")); cur_ml = num(gv(f, "综合毛利RMB(自动)"))
+        wl = num(gv(f, "物流成本RMB(待接)"))          # 我方实际付的国内段运费
+        recovered = num(gv(f, "已收客户运费RMB(case2)"))  # case2 我方向客户收回的运费(抵物流)
+        custom = num(gv(f, "报关费RMB"))               # 报关费(大客户出口) 计入我方成本
+        ml = round(amt * rate - cg_rmb - (wl - recovered) - custom, 2)
+        cur_cg = num(gv(f, "采购成本RMB(领星自动)")); cur_ml = num(gv(f, "综合毛利RMB(自动)"))
         nf = {}
-        if abs(cur_amt - amt) > 0.01 and amt: nf["产品金额(原币)"] = amt
+        # 产品金额(原币) 改飞书公式(数量×单价)实时算, 服务不再写
         if abs(cur_cg - cg_rmb) > 0.01: nf["采购成本RMB(领星自动)"] = cg_rmb
         if abs(cur_ml - ml) > 0.01: nf["综合毛利RMB(自动)"] = ml
         if nf: updates.append({"record_id": r["record_id"], "fields": nf})
