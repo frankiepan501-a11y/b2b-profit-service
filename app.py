@@ -111,7 +111,7 @@ def do_recompute():
     # 回款明细: 按 订单号/PI号 收 [(金额,币种)] (尾款时按汇率换算到订单币种)
     pay_by_pi = {}
     for pr in getall(T, PAY):
-        pf = pr["fields"]; pi = gv(pf, "订单号/PI号"); amt = num(gv(pf, "回款金额(原币)")); cc = gv(pf, "币种")
+        pf = pr["fields"]; pi = gv(pf, "订单号/PI号"); amt = num(gv(pf, "回款金额(实收)")); cc = gv(pf, "币种")
         if not pi: continue
         pay_by_pi.setdefault(pi, []).append((amt, cc))
     updates = []; miss = set(); skip_fx = 0
